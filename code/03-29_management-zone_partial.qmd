@@ -176,7 +176,12 @@ All of them run k-means with k ranging from 1 to 10 (in our case), and assess ho
 Let's explore a few of these metrics:
 ```{r finding k - wss method}
 # Total error x k
-
+fviz_nbclust(all_v_n %>% 
+             st_drop_geometry(),
+             method = "wss",
+             k.max = 10,
+             FUNcluster = kmeans
+             ) #elbow method
 ```
 
 ```{r finding k - silhouette method}
@@ -210,7 +215,10 @@ fviz_nbclust(bestk) # 13 tests proposed 2 as best
 
 Let's go with 2 clusters:
 ```{r @ mod_km2 }
-mod_km2 
+mod_km2 <- kmeans(all_v_n %>% 
+                    st_drop_geometry(),
+                  centers = 2,
+                  nstart = 10)
 
 mod_km2
 ```
@@ -218,17 +226,35 @@ mod_km2
 # Exploring clusters  
 Let's save cluster membership as a column in our data, and bring back the geometry so we can map it.  
 ```{r @ zone_df }
-zone_df 
+zone_df <- all_v_n %>% 
   # Adding cluster membership column
+mutate(cluster = mod_km2$cluster,
+       cluster = factor(cluster))
 
-zone_df
+zone_df %>% 
+  group_by(cluster) %>% 
+  summarize(n = length(cluster))
+
 
 
 ```
 
 
 ```{r cluster map}
-
+zone_df %>% 
+  ggplot()+
+  geom_sf(aes(fill = cluster),
+          color = NA)+
+  scale_fill_colorblind()+
+  geom_sf(data = boundary_w, fill = NA)+
+  labs(title = "Unsmoothed zones")+
+  theme_map()+
+  theme(plot.title = element_text(color = 'blue'))
+  
+ggsave("../output/zones.png",
+       width = 3,
+       height = 4,
+       bg = "white") #if bg not assigned, it used transparent background
 ```
 
 # Smoothing zones  
@@ -239,37 +265,48 @@ knitr::include_graphics("https://geocompr.robinlovelace.net/figures/04_focal_exa
 
 ```{r grid_r}
 library(stars)
+#install.packages("abind")
+library(abind)
 # grid in vector format
 grid_r <-  boundary_w %>%
   st_make_grid(cellsize = 10) %>%
   st_as_sf() %>%
   st_rasterize(dx=10, dy=10) %>%
   st_crop(boundary_w)
+
+grid_r
 ```
 
 
 ```{r smoothing as raster}
+#install.packages("starsExtra")
 library(starsExtra)
 library(gstat)
 
-zone_s 
+zone_s <- zone_df %>% 
+  dplyr::select(cluster) %>% 
   # Transforming from polygon to point
-
+    st_cast("POINT") %>% 
   # Transforming from geometry to xy (needed by the focal function)
-
+    st_sfc2xy() %>% 
   # Transforming from point (vector) to raster
-
+    st_as_stars() %>% 
   # Applying focal filter
-
+    focal2(w = matrix(1,5,5),
+           fun = "mean",
+           na.rm = T) %>%         #when we have odd number for matrix, it has the center cell eg. 3x3, 5x5....)
   # Transforming from raster back to vector
-
+    st_as_sf() %>% 
   # Interpolating to fill to boundary
-
+    gstat::gstat(formula = cluster ~ 1,
+          data = .) %>% 
+    predict(grid_r) %>% 
   # Transforming from raster back to vector
-
+    st_as_sf() %>% 
   # Rounding  
-
+    mutate(cluster = round(var1.pred, 0)) %>% 
   # Adjusting cluster id from numeric to factor
+    mutate(cluster_f = factor(cluster))
 
 zone_s
 
@@ -279,8 +316,8 @@ zone_s
 ```{r smoothed plot}
 zone_s %>%
   ggplot()+
-
-    geom_sf(data = boundary_w, fill=NA)+
+  geom_sf(aes(fill = cluster_f), color = NA)+
+  geom_sf(data = boundary_w, fill=NA)+
   scale_fill_colorblind()+
   labs(title="Smoothed zones, 5x5, mean")+
   theme_map()+
@@ -294,7 +331,11 @@ ggsave("../output/zonesmoothed_5x5_mean.png",
 How are clusters affected by the variables used to create them?  
 
 ```{r}
-zone_s_df 
+zone_s_df <- all_v %>% 
+  st_join(zone_s,
+          join = st_equals,
+          left = T) %>% 
+  dplyr::select(-flowdir, -aspect, -var1.pred, -var1.var, -cluster)
 
 zone_s_df
 
