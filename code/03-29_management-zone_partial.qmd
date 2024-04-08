@@ -401,7 +401,7 @@ zone_s_df %>%
 
 ```
 
-It seems like cluster .... has higher CV and lower yield, and cluster ... has lower CV and greater yield.  
+It seems like cluster 2 has higher CV and lower yield, and cluster 1 has lower CV and greater yield.  
 
 ```{r contingency table}
 zone_s_df %>%
@@ -422,11 +422,33 @@ zone_s_df %>%
 
 ```
 
-I suppose we can call cluster ... as high yield and cluster ... as lower yield, right?  
+I suppose we can call cluster 2 as high yield and cluster 1 as lower yield, right?  
+
+```{r contingency table}
+zone_s_df %>% 
+  group_by(stclass) %>% 
+  mutate(N = length(stclass)) %>% 
+  group_by(cluster_f, stclass, N) %>% 
+  tally() %>% 
+  mutate(prop = (n/N)*100) %>% 
+  ggplot(aes(x = cluster_f,
+             y = prop,
+             fill = cluster_f))+
+  geom_col()+
+  facet_grid(~stclass)
+  
+``` 
+I suppose we can call cluster 1 as high yield and cluster 2 as lower yield, right?
 
 # Exporting clusters  
 ```{r exporting clusters}
-zone_s_df 
+zone_s_df %>% 
+  mutate(zone = case_when(
+    cluster_f == "1" ~ "high",
+    cluster_f == "2" ~ "low"
+  )) %>% 
+  write_sf("../data/zone_s.geojson",
+           delete_dsn = T)
 ```
 
 # Summary  
